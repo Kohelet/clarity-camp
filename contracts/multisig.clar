@@ -1,3 +1,8 @@
+;; title: Multi Sig
+;; version: 0.5
+;; summary: A basic implementation of a multi sig contract.
+;; description: Implementation of a multi-sig contract as a learning exercise to pickup Clarity.
+
 ;; Owner
 (define-constant contract-owner tx-sender)
 
