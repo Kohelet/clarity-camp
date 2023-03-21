@@ -10,7 +10,7 @@
 (define-constant err-not-contract-owner (err u100))
 (define-constant err-proposer-threshold-not-met (err u101))
 (define-constant err-voter-thresdhold-not-met (err u102))
-(define-constant err-contributor-balance-too-low (err u103))
+(define-constant err-above-contributor-proportion (err u103))
 (define-constant err-withdraw-failed (err u104))
 (define-constant err-contribution-failed (err u105))
 (define-constant err-contract-balance-too-low (err u106))
@@ -18,8 +18,10 @@
 (define-constant err-proposal-executed (err u108))
 (define-constant err-vote-failed (err u109))
 
-;;Constants
-
+;;MAX Connstants
+;; These are need because of the multiplication use for threshold calculations.
+(define-constant MAX_CONTRIBUTORS u113427455640312821154458202477256070485)
+(define-constant MAX_VOTES u85070591730234615865843651857942052863)
 
 ;; Data Structure
 (define-data-var proposer-threshold uint u250)
@@ -42,8 +44,11 @@
 (define-private (check-contract-balance (amount uint))
         (asserts! (>= (stx-get-balance (as-contract tx-sender)) amount) false)
 )
-(define-private (check-contributor-balance (amount uint))
+(define-private (check-amount-below-contributor-proportion (amount uint))
+    (begin
         (asserts! (>= (default-to u0 (map-get? contributors tx-sender)) amount) false)
+        (asserts! (<= (* amount (var-get total-contributed)) (* (stx-get-balance (as-contract tx-sender)) (var-get contributors-count))) false)
+    )
 )
 
 (define-private (increment-vote-count (proposal_id uint))
@@ -61,6 +66,30 @@
     )
 )
 
+(define-private (execute (proposal_id uint))
+    (let ((proposal (map-get? proposals {id: proposal_id})))
+        (asserts! (is-some proposal) false)
+        (asserts! (not (unwrap-panic (get executed proposal))) false)
+        (asserts! (check-contract-balance (unwrap-panic (get amount proposal))) false)
+        (asserts! (is-ok (stx-transfer? (unwrap-panic (get amount proposal)) (as-contract tx-sender) (unwrap-panic (get destination proposal)))) false)
+        (map-set proposals {id: proposal_id} 
+        { 
+            proposer: (unwrap-panic (get proposer proposal)), 
+            amount: (unwrap-panic (get amount proposal)), 
+            destination: (unwrap-panic (get destination proposal)), 
+            votes: (unwrap-panic (get votes proposal)), 
+            executed: true
+        })
+       true
+    )
+)
+
+(define-private (votes-met (proposal_id uint))
+    (let ((proposal (map-get? proposals {id: proposal_id})))
+        (asserts! (is-some proposal) false)
+        (asserts! (>= (* (unwrap-panic (get votes proposal)) u4) (* (var-get contributors-count) u3)) false)
+    )
+)
 
  ;; Functions
 (define-public (contribute (amount uint))
@@ -79,7 +108,7 @@
 (define-public (withdraw (amount uint))
     (begin
         (asserts! (check-contract-balance amount) err-contract-balance-too-low)
-        (asserts! (check-contributor-balance amount) err-contributor-balance-too-low)
+        (asserts! (check-amount-below-contributor-proportion amount) err-above-contributor-proportion)
         (propose amount tx-sender)
     )
 )
@@ -100,7 +129,10 @@
             (asserts! (is-some proposal) err-no-matching-proposal)
             (asserts! (not (unwrap-panic (get executed proposal))) err-proposal-executed)
             (asserts! (increment-vote-count proposal_id) err-vote-failed)
-            (ok true)
+            (if (votes-met proposal_id)
+                (ok (execute proposal_id))
+                (ok false)
+            )
         )
     )
 )
