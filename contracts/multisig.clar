@@ -23,7 +23,7 @@
 (define-constant MAX_CONTRIBUTORS u113427455640312821154458202477256070485)
 (define-constant MAX_VOTES u85070591730234615865843651857942052863)
 
-;; Data Structure
+;; Data Structures
 (define-data-var proposer-threshold uint u250)
 (define-data-var voter-threshold uint u500)
 (define-map proposals {id: uint} {proposer: principal, amount: uint, destination: principal, votes: uint, executed: bool})
