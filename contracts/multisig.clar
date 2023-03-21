@@ -17,7 +17,8 @@
 (define-constant err-no-matching-proposal (err u107))
 (define-constant err-proposal-executed (err u108))
 (define-constant err-vote-failed (err u109))
-
+(define-constant err-contributor-count-exceeded (err u110))
+(define-constant err-vote-count-exceeded (err u111))
 ;;MAX Connstants
 ;; These are need because of the multiplication use for threshold calculations.
 (define-constant MAX_CONTRIBUTORS u113427455640312821154458202477256070485)
@@ -54,6 +55,7 @@
 (define-private (increment-vote-count (proposal_id uint))
     (let ((proposal (map-get? proposals {id: proposal_id})))
         (asserts! (is-some proposal) false)
+        (asserts! (< (unwrap-panic (get votes proposal)) MAX_VOTES) false)
         (map-set proposals {id: proposal_id} 
         { 
             proposer: (unwrap-panic (get proposer proposal)), 
@@ -91,12 +93,20 @@
     )
 )
 
+(define-private (check-can-add-contributor)
+    (asserts! (< (var-get contributors-count) MAX_CONTRIBUTORS) false)
+)
+
+(define-private (check-new-contributor)
+    (asserts! (is-none (map-get? contributors tx-sender)) false)
+)
+
  ;; Functions
 (define-public (contribute (amount uint))
-    (begin 
-        (if (is-eq (map-get? contributors tx-sender) none)
-            (var-set contributors-count (+ (var-get contributors-count) u1))
-            false
+    (begin
+        (if (and (check-new-contributor) (asserts! (check-can-add-contributor) err-contributor-count-exceeded))
+                (var-set contributors-count (+ (var-get contributors-count) u1))
+                false
         )
         (asserts! (is-ok (stx-transfer? amount tx-sender (as-contract tx-sender))) err-contribution-failed)
         (map-set contributors tx-sender (+ (default-to u0 (map-get? contributors tx-sender)) amount))
