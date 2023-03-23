@@ -19,6 +19,7 @@
 (define-constant err-vote-failed (err u109))
 (define-constant err-contributor-count-exceeded (err u110))
 (define-constant err-vote-count-exceeded (err u111))
+(define-constant err-vote-already-cast (err u112))
 ;;MAX Connstants
 ;; These are need because of the multiplication use for threshold calculations.
 (define-constant MAX_CONTRIBUTORS u113427455640312821154458202477256070485)
@@ -27,12 +28,12 @@
 ;; Data Structures
 (define-data-var proposer-threshold uint u250)
 (define-data-var voter-threshold uint u500)
-(define-map proposals {id: uint} {proposer: principal, amount: uint, destination: principal, votes: uint, executed: bool})
 (define-data-var proposal-count uint u0)
-(define-map contributors principal uint)
 (define-data-var contributors-count uint u0)
 (define-data-var total-contributed uint u0)
-
+(define-map proposals {id: uint} {proposer: principal, amount: uint, destination: principal, votes: uint, executed: bool})
+(define-map contributors principal uint)
+(define-map vote-track {voter: principal, proposal: uint} bool)
 ;; Participant Functions
 (define-private (meets-proposer-threshold)
     (>= (default-to u0 (map-get? contributors tx-sender)) (var-get proposer-threshold))
@@ -51,7 +52,17 @@
         (asserts! (<= (* amount (var-get total-contributed)) (* (stx-get-balance (as-contract tx-sender)) (var-get contributors-count))) false)
     )
 )
+(define-private (track-vote (prop uint))
+        (map-set vote-track {voter: tx-sender, proposal: prop} true)
+)
 
+(define-private (has-voted (prop uint))
+    (asserts! (default-to false (map-get? vote-track {voter: tx-sender, proposal: prop})) false)
+)
+
+ ;; Admin Functions
+
+;; Need to update so that someone who has already voted cannot vote again, also restrict proposer from voting
 (define-private (increment-vote-count (proposal_id uint))
     (let ((proposal (map-get? proposals {id: proposal_id})))
         (asserts! (is-some proposal) false)
@@ -82,7 +93,7 @@
             votes: (unwrap-panic (get votes proposal)), 
             executed: true
         })
-       true
+       (track-vote proposal_id)
     )
 )
 
@@ -135,6 +146,7 @@
 (define-public (vote (proposal_id uint))
     (begin 
         (asserts! (meets-voter-threshold) err-voter-thresdhold-not-met)
+        (asserts! (not (has-voted proposal_id)) err-vote-already-cast)
         (let ((proposal (map-get? proposals {id: proposal_id})))
             (asserts! (is-some proposal) err-no-matching-proposal)
             (asserts! (not (unwrap-panic (get executed proposal))) err-proposal-executed)
